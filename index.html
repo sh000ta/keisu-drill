@@ -107,6 +107,7 @@
 
         <div class="calculator-container" id="calculator-area">
             <div class="calc-display">
+                <!-- onfocus="this.select();" を削除し、純粋な入力欄に -->
                 <input type="text" id="calc-input" inputmode="none" placeholder="数値を入力">
             </div>
             <div class="calc-grid">
@@ -344,53 +345,51 @@
             document.getElementById('streak-display').innerText = `連続正解: 0`;
         }
 
-        // --- 電卓ロジック（カーソル対応の修正版） ---
+        // --- 電卓ロジック（カーソル対応 完全修正版） ---
         const calcInput = document.getElementById('calc-input');
-        let cursorPosition = 0;
 
-        // カーソル位置を記憶する仕組み
-        calcInput.addEventListener('blur', () => { cursorPosition = calcInput.selectionStart; });
-        calcInput.addEventListener('click', () => { cursorPosition = calcInput.selectionStart; });
-        calcInput.addEventListener('keyup', () => { cursorPosition = calcInput.selectionStart; });
+        // スマホでボタンを押した時にフォーカス（カーソル）が外れるのを防ぐ魔法のコード
+        document.querySelectorAll('.calc-btn').forEach(btn => {
+            btn.addEventListener('mousedown', (e) => e.preventDefault());
+            btn.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+        });
 
         function calcAppend(val) {
+            let start = calcInput.selectionStart || 0;
+            let end = calcInput.selectionEnd || 0;
             let text = calcInput.value;
-            let start = cursorPosition;
             
-            calcInput.value = text.substring(0, start) + val + text.substring(start);
-            cursorPosition = start + val.length;
+            // カーソル位置に文字を挿入
+            calcInput.value = text.substring(0, start) + val + text.substring(end);
             
+            // カーソルを1つ進める
+            let newPos = start + val.length;
             calcInput.focus();
-            try { calcInput.setSelectionRange(cursorPosition, cursorPosition); } catch(e) {}
+            try { calcInput.setSelectionRange(newPos, newPos); } catch(e) {}
         }
 
         function calcBackspace() {
+            let start = calcInput.selectionStart || 0;
+            let end = calcInput.selectionEnd || 0;
             let text = calcInput.value;
-            let start = cursorPosition;
 
-            if (start > 0) {
-                calcInput.value = text.substring(0, start - 1) + text.substring(start);
-                cursorPosition = start - 1;
+            if (start === end && start > 0) {
+                // 1文字消す
+                calcInput.value = text.substring(0, start - 1) + text.substring(end);
+                let newPos = start - 1;
+                calcInput.focus();
+                try { calcInput.setSelectionRange(newPos, newPos); } catch(e) {}
+            } else if (start !== end) {
+                // 選択範囲を消す
+                calcInput.value = text.substring(0, start) + text.substring(end);
+                calcInput.focus();
+                try { calcInput.setSelectionRange(start, start); } catch(e) {}
+            } else {
+                calcInput.focus();
             }
-            
-            calcInput.focus();
-            try { calcInput.setSelectionRange(cursorPosition, cursorPosition); } catch(e) {}
         }
 
         function calcClear() {
             calcInput.value = "";
-            cursorPosition = 0;
             calcInput.focus();
-        }
-
-        function calcEval() {
-            try {
-                let evalText = calcInput.value.replace(/×/g, '*').replace(/÷/g, '/');
-                if (evalText) {
-                    let res = Function('"use strict";return (' + evalText + ')')();
-                    if (!isNaN(res)) {
-                        calcInput.value = res;
-                        cursorPosition = calcInput.value.length;
-                    }
-                }
-            } catch (e) {}
+       
