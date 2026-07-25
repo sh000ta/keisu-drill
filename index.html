@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>計数管理マスタードリル</title>
+<style>
+  body { font-family: sans-serif; background-color: #f4f7f6; color: #333; padding: 10px; max-width: 500px; margin: 0 auto; }
+  .header-area { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .streak-box { background: #e74c3c; color: #fff; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 0.9em; }
+  .card { background: #fff; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+  h1 { font-size: 1.2em; color: #2c3e50; text-align: center; margin-top: 5px; border-bottom: 2px solid #e74c3c; padding-bottom: 10px; }
+  .category-selector { background: #edf2f8; padding: 10px; border-radius: 6px; margin-bottom: 15px; }
+  .category-selector select { width: 100%; padding: 10px; font-size: 1em; border-radius: 4px; font-weight: bold; }
+  .question-text { font-size: 1.05em; line-height: 1.6; margin-bottom: 15px; padding: 15px; background: #fdf2e9; border-radius: 6px; }
+  .calculator-container { background: #34495e; border-radius: 8px; padding: 12px; margin-bottom: 20px; color: white; }
+  #calc-display { width: 100%; padding: 10px; font-size: 1.5em; text-align: right; border: none; border-radius: 4px; margin-bottom: 10px; font-family: monospace; box-sizing: border-box; }
+  .calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .calc-btn { padding: 12px 5px; font-size: 1.2em; background: #ecf0f1; border: none; border-radius: 4px; font-weight: bold; }
+  .calc-btn.op { background: #95a5a6; color: white; }
+  .calc-btn.calc-eq { background: #e67e22; color: white; }
+  .calc-action-btn { width: 100%; padding: 12px; background: #f1c40f; color: #2c3e50; border: none; border-radius: 4px; font-weight: bold; margin-top: 10px; }
+  input[type="number"] { width: 100%; padding: 12px; font-size: 1.3em; border: 2px solid #bdc3c7; border-radius: 4px; box-sizing: border-box; text-align: center; }
+  .main-btn { width: 100%; padding: 14px; background: #e74c3c; color: white; border: none; border-radius: 4px; font-size: 1.1em; font-weight: bold; margin-bottom: 10px; }
+  .hint-btn { background: #9b59b6; color: white; border: none; border-radius: 4px; padding: 10px; font-size: 0.9em; font-weight: bold; width: 100%; margin-bottom: 10px; }
+  .giveup-btn { background: #7f8c8d; color: white; border: none; border-radius: 4px; padding: 10px; font-size: 0.9em; font-weight: bold; width: 100%; }
+  .btn-next { background: #2ecc71; width: 100%; padding: 15px;}
+  .hint-box { display: none; background: #f9ebff; border-left: 4px solid #9b59b6; padding: 10px; margin-bottom: 15px; }
+  #result-area { display: none; margin-top: 15px; padding: 15px; border-radius: 4px; }
+  .correct { background: #d4edda; color: #155724; }
+  .incorrect { background: #f8d7da; color: #721c24; }
+  .giveup { background: #fff3cd; color: #856404; }
+  .explanation { margin-top: 15px; font-size: 0.95em; background: #f8f9fa; padding: 15px; border-left: 4px solid #e74c3c; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="header-area">
+  <div style="font-weight:bold;">店舗マネジメント特訓</div>
+  <div class="streak-box">🔥 連続正解: <span id="streak-count">0</span></div>
+</div>
+<div class="card">
+  <div class="category-selector">
+    <select id="category-select" onchange="generateQuestion(true)">
+      <option value="all">🎲 全ジャンルからシャッフル</option>
+      <option value="pricing">💰 価格設定（値入・歩留まり）</option>
+      <option value="turnover">🔄 商品回転率・回転日数</option>
+      <option value="profit_loss">📊 差益帳票・ロス（PI値含む）</option>
+      <option value="avg_markup">⚖️ 平均値入率</option>
+      <option value="bep">📉 損益分岐点</option>
+      <option value="efficiency">⏱️ 生産性（人時・坪効率）</option>
+      <option value="cross_product">✖️ 相乗積</option>
+    </select>
+  </div>
+  <h1 id="question-type">問題</h1>
+  <div class="question-text" id="question-text">読み込み中...</div>
+  <button id="hint-btn-top" class="hint-btn" onclick="showHint()">💡 ヒントを見る</button>
+  <div id="hint-area" class="hint-box"></div>
+  <div class="calculator-container">
+    <div style="text-align:center; font-size:0.8em; margin-bottom:5px;">ドリル専用電卓</div>
+    <input type="text" id="calc-display" readonly placeholder="0">
+    <div class="calc-grid">
+      <button class="calc-btn op" onclick="calcAppend('(')">(</button>
+      <button class="calc-btn op" onclick="calcAppend(')')">)</button>
+      <button class="calc-btn op" onclick="calcClear()">C</button>
+      <button class="calc-btn op" onclick="calcAppend('÷')">÷</button>
+      <button class="calc-btn" onclick="calcAppend('7')">7</button>
+      <button class="calc-btn" onclick="calcAppend('8')">8</button>
+      <button class="calc-btn" onclick="calcAppend('9')">9</button>
+      <button class="calc-btn op" onclick="calcAppend('×')">×</button>
+      <button class="calc-btn" onclick="calcAppend('4')">4</button>
+      <button class="calc-btn" onclick="calcAppend('5')">5</button>
+      <button class="calc-btn" onclick="calcAppend('6')">6</button>
+      <button class="calc-btn op" onclick="calcAppend('-')">-</button>
+      <button class="calc-btn" onclick="calcAppend('1')">1</button>
+      <button class="calc-btn" onclick="calcAppend('2')">2</button>
+      <button class="calc-btn" onclick="calcAppend('3')">3</button>
+      <button class="calc-btn op" onclick="calcAppend('+')">+</button>
+      <button class="calc-btn" onclick="calcAppend('0')">0</button>
+      <button class="calc-btn" onclick="calcAppend('00')">00</button>
+      <button class="calc-btn" onclick="calcAppend('.')">.</button>
+      <button class="calc-btn calc-eq" onclick="calcEval()">=</button>
+    </div>
+    <button class="calc-action-btn" onclick="calcToAnswer()">↓ 計算結果を解答欄に入れる ↓</button>
+  </div>
+  <div style="margin-bottom:15px;">
+    <label style="font-weight:bold;">解答欄:</label>
+    <input type="number" id="user-answer" placeholder="答えを入力">
+  </div>
+  <div id="action-buttons">
+    <button class="main-btn" onclick="checkAnswer(false)">答え合わせ</button>
+    <button class="giveup-btn" onclick="checkAnswer(true)">🏳️ わからない（答えを見る）</button>
+  </div>
+  <div id="result-area">
+    <strong id="result-message"></strong>
+    <div id="explanation" class="explanation"></div>
+  </div>
+  <button id="next-btn" class="main-btn btn-next" style="display:none; margin-top:15px;" onclick="generateQuestion(false)">次の問題へ</button>
+</div>
+<script>
+  let currentAnswer = 0, currentExplanation = "", currentHint = "", streak = 0, lastGenerator = null;
+  function getRnd(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+  function fmt(num) { return num.toLocaleString(); }
+  function genDiscountPricing() {
+    document.getElementById('question-type').innerText = '価格設定（割引見越し）';
+    const cost = getRnd(5, 20) * 100, discount = getRnd(1, 4) * 10, targetMargin = getRnd(1, 4) * 10;
+    const finalPrice = cost / (1 - targetMargin/100);
+    currentAnswer = Math.round(finalPrice / (1 - discount/100));
+    currentHint = `最終売価(原価÷(1-値入率))を出してから、元の定価(最終売価÷(1-割引率))を逆算します。`;
+    document.getElementById('question-text').innerHTML = `仕入原価<strong>${fmt(cost)}円</strong>の商品を<strong>${discount}％引き</strong>で販売しても値入率<strong>${targetMargin}％</strong>を確保したい。最初の「元の売価（定価）」はいくら？`;
+    currentExplanation = `<strong>【計算】</strong><br>① ${fmt(cost)} ÷ (1 - 0.${targetMargin}) ＝ ${fmt(Math.round(finalPrice))}円<br>② ${fmt(Math.round(finalPrice))} ÷ (1 - 0.${discount}) ＝ <strong>${fmt(currentAnswer)}円</strong>`;
+  }
+  function genYieldPricing() {
+    document.getElementById('question-type').innerText = '価格設定（歩留まり考慮）';
+    const cost = getRnd(8, 20) * 10, yieldRate = getRnd(4, 8) * 10, margin = getRnd(3, 6) * 10;
+    const trueCost = cost / (yieldRate / 100);
+    currentAnswer = Math.round(trueCost / (1 - margin/100));
+    currentHint = `歩留まり原価(仕入原価÷歩留り率)を出してから、目標値入率の売価(本当の原価÷(1-値入率))を計算します。`;
+    document.getElementById('question-text').innerHTML = `100gあたり仕入原価<strong>${fmt(cost)}円</strong>、歩留まり率<strong>${yieldRate}％</strong>の商品。値入率<strong>${margin}％</strong>を確保したい場合、100gあたりの売価は？`;
+    currentExplanation = `<strong>【計算】</strong><br>① ${cost} ÷ 0.${yieldRate} ＝ ${Math.round(trueCost)}円（本当の原価）<br>② ${Math.round(trueCost)} ÷ (1 - 0.${margin}) ＝ <strong>${fmt(currentAnswer)}円</strong>`;
+  }
+  function genTurnover() {
+    const isDays = getRnd(1, 2) === 1, turnoverRate = getRnd(4, 12), avgInv = getRnd(10, 50) * 100000, cogs = avgInv * turnoverRate;
+    if (isDays) {
+      document.getElementById('question-type').innerText = '商品回転日数';
+      currentAnswer = Math.round(365 / turnoverRate);
+      currentHint = `回転率(売上原価÷平均在庫)を出して、365日÷回転率 で求めます。`;
+      document.getElementById('question-text').innerHTML = `売上原価：<strong>${fmt(cogs)}円</strong>、平均在庫高：<strong>${fmt(avgInv)}円</strong><br>商品回転日数は何日？(1年=365日)`;
+      currentExplanation = `<strong>【計算】</strong><br>①回転率：${fmt(cogs)} ÷ ${fmt(avgInv)} ＝ ${turnoverRate}回<br>②回転日数：365 ÷ ${turnoverRate} ＝ <strong>${currentAnswer}日</strong>`;
+    } else {
+      document.getElementById('question-type').innerText = '商品回転率';
+      currentAnswer = turnoverRate;
+      currentHint = `売上原価 ÷ 平均在庫高 です。`;
+      document.getElementById('question-text').innerHTML = `売上原価：<strong>${fmt(cogs)}円</strong>、平均在庫高：<strong>${fmt(avgInv)}円</strong><br>商品回転率（回）は？`;
+      currentExplanation = `<strong>【計算】</strong><br>${fmt(cogs)} ÷ ${fmt(avgInv)} ＝ <strong>${currentAnswer}回</strong>`;
+    }
+  }
+  function genProfitLossDoc() {
+    const subType = getRnd(1, 4);
+    if (subType === 1) {
+      document.getElementById('question-type').innerText = 'PI値';
+      const customers = getRnd(1, 5) * 1000, salesQty = getRnd(1, 8) * 50;
+      currentAnswer = Math.round((salesQty / customers) * 1000);
+      currentHint = `買上点数 ÷ 客数 × 1000 です。`;
+      document.getElementById('question-text').innerHTML = `客数：<strong>${fmt(customers)}人</strong>、買上点数：<strong>${salesQty}点</strong><br>PI値は？`;
+      currentExplanation = `<strong>【計算】</strong><br>${salesQty} ÷ ${fmt(customers)} × 1000 = <strong>${currentAnswer}</strong>`;
+    } else if (subType === 2) {
+      document.getElementById('question-type').innerText = '値入率';
+      const cost = getRnd(10, 50) * 1000, marginPct = getRnd(2, 5) * 10, retail = cost / (1 - marginPct/100), markup = retail - cost;
+      currentAnswer = marginPct;
+      currentHint = `値入高(売価-原価) ÷ 売価 × 100 です。`;
+      document.getElementById('question-text').innerHTML = `仕入原価：<strong>${fmt(cost)}円</strong>、仕入売価：<strong>${fmt(retail)}円</strong><br>値入率（％）は？`;
+      currentExplanation = `<strong>【計算】</strong><br>①値入高：${fmt(retail)} - ${fmt(cost)} = ${fmt(markup)}円<br>②値入率：${fmt(markup)} ÷ ${fmt(retail)} × 100 ＝ <strong>${currentAnswer}％</strong>`;
+    } else if (subType === 3) {
+      document.getElementById('question-type').innerText = '不明ロス高';
+      const lossAmt = getRnd(1, 5) * 10000, bookInv = getRnd(10, 50) * 100000, realInv = bookInv - lossAmt;
+      currentAnswer = lossAmt;
+      currentHint = `帳簿在庫売価 - 実地在庫売価 です。`;
+      document.getElementById('question-text').innerHTML = `帳簿在庫：<strong>${fmt(bookInv)}円</strong>、実地在庫：<strong>${fmt(realInv)}円</strong><br>不明ロス高は？`;
+      currentExplanation = `<strong>【計算】</strong><br>${fmt(bookInv)} - ${fmt(realInv)} ＝ <strong>${fmt(currentAnswer)}円</strong>`;
+    } else {
+      document.getElementById('question-type').innerText = '値入ロス高';
+      const markdown = getRnd(1, 5) * 10000, lossAmt = getRnd(1, 5) * 10000;
+      currentAnswer = markdown + lossAmt;
+      currentHint = `売変高（値下高） ＋ 不明ロス高 です。`;
+      document.getElementById('question-text').innerHTML = `売変高：<strong>${fmt(markdown)}円</strong>、不明ロス高：<strong>${fmt(lossAmt)}円</strong><br>値入ロス高（総額）は？`;
+      currentExplanation = `<strong>【計算】</strong><br>${fmt(markdown)} ＋ ${fmt(lossAmt)} ＝ <strong>${fmt(currentAnswer)}円</strong>`;
+    }
+  }
+  function genAvgMarkup() {
+    document.getElementById('question-type').innerText = '平均値入率';
+    const begR = 1000000, begC = 800000, purR = 4000000, purC = 2800000;
+    currentAnswer = ((begR + purR - begC - purC) / (begR + purR)) * 100;
+    currentHint = `(総売価 - 総原価) ÷ 総売価 × 100 です。`;
+    document.getElementById('question-text').innerHTML = `期首(売${fmt(begR)}/原${fmt(begC)})、仕入(売${fmt(purR)}/原${fmt(purC)})<br>平均値入率（％）は？`;
+    currentExplanation = `<strong>【計算】</strong><br>①総売価500万、総原価360万<br>②値入額140万 ÷ 500万 × 100 ＝ <strong>${currentAnswer}％</strong>`;
+  }
+  function genBreakEven() {
+    document.getElementById('question-type').innerText = '損益分岐点売上高';
+    const fixed = getRnd(5, 20) * 100000, ratio = getRnd(15, 35);
+    currentAnswer = Math.round(fixed / (ratio / 100));
+    currentHint = `固定費 ÷ 限界利益率 です。`;
+    document.getElementById('question-text').innerHTML = `固定費：<strong>${fmt(fixed)}円</strong>、限界利益率：<strong>${ratio}%</strong><br>損益分岐点売上高は？`;
+    currentExplanation = `<strong>【計算】</strong><br>${fmt(fixed)} ÷ 0.${ratio} = <strong>${fmt(currentAnswer)}円</strong>`;
+  }
+  function genEfficiency() {
+    document.getElementById('question-type').innerText = '人時売上高（労働効率）';
+    const sales = getRnd(500, 1500) * 10000, hours = getRnd(1000, 3000);
+    currentAnswer = Math.round(sales / hours);
+    currentHint = `売上高 ÷ 総労働時間 です。`;
+    document.getElementById('question-text').innerHTML = `売上高：<strong>${fmt(sales)}円</strong>、総労働時間：<strong>${fmt(hours)}時間</strong><br>人時売上高は？`;
+    currentExplanation = `<strong>【計算】</strong><br>${fmt(sales)} ÷ ${fmt(hours)} ＝ <strong>${fmt(currentAnswer)}円</strong>`;
+  }
+  function genCrossProduct() {
+    document.getElementById('question-type').innerText = '相乗積';
+    const comp = getRnd(10, 40), margin = getRnd(15, 35);
+    currentAnswer = Math.round((comp * margin) / 10) / 10;
+    currentHint = `売上構成比(%) × 粗利率(%) ÷ 100 です。`;
+    document.getElementById('question-text').innerHTML = `構成比：<strong>${comp}%</strong>、粗利率：<strong>${margin}%</strong><br>相乗積（%）は？`;
+    currentExplanation = `<strong>【計算】</strong><br>${comp} × ${margin} ÷ 100 = <strong>${currentAnswer}%</strong>`;
+  }
+  const categoryMap = { 'pricing': [genDiscountPricing, genYieldPricing], 'turnover': [genTurnover], 'profit_loss': [genProfitLossDoc], 'avg_markup': [genAvgMarkup], 'bep': [genBreakEven], 'efficiency': [genEfficiency], 'cross_product': [genCrossProduct] };
+  const allGenerators = [genDiscountPricing, genYieldPricing, genTurnover, genProfitLossDoc, genAvgMarkup, genBreakEven, genEfficiency, genCrossProduct];
+  function generateQuestion(isCatChange = false) {
+    if (isCatChange) { streak = 0; updateStreak(); }
+    document.getElementById('user-answer').value = ''; document.getElementById('result-area').style.display = 'none'; document.getElementById('action-buttons').style.display = 'block'; document.getElementById('next-btn').style.display = 'none'; document.getElementById('hint-area').style.display = 'none'; document.getElementById('hint-btn-top').style.display = 'block'; calcClear();
+    const cat = document.getElementById('category-select').value;
+    let func;
+    if (cat === 'all') { do { func = allGenerators[getRnd(0, allGenerators.length - 1)]; } while (func === lastGenerator && allGenerators.length > 1); }
+    else { const pool = categoryMap[cat]; func = pool[getRnd(0, pool.length - 1)]; }
+    lastGenerator = func; func();
+  }
+  function showHint() { document.getElementById('hint-area').innerText = "💡 " + currentHint; document.getElementById('hint-area').style.display = 'block'; document.getElementById('hint-btn-top').style.display = 'none'; }
+  function checkAnswer(isGiveUp) {
+    const val = document.getElementById('user-answer').value;
+    const area = document.getElementById('result-area'), msg = document.getElementById('result-message');
+    area.style.display = 'block';
+    if (isGiveUp) { streak = 0; updateStreak(); area.className = 'giveup'; msg.innerHTML = `正解は <strong>${fmt(currentAnswer)}</strong> でした。`; }
+    else {
+      if (!val) { alert('数字を入力してください'); area.style.display = 'none'; return; }
+      if (Math.abs(parseFloat(val) - currentAnswer) <= 0.1) { streak++; updateStreak(); area.className = 'correct'; msg.innerText = '大正解！🎉'; }
+      else { streak = 0; updateStreak(); area.className = 'incorrect'; msg.innerHTML = `正解は <strong>${fmt(currentAnswer)}</strong> です。`; }
+    }
+    document.getElementById('explanation').innerHTML = currentExplanation; document.getElementById('action-buttons').style.display = 'none'; document.getElementById('next-btn').style.display = 'block';
+  }
+  function updateStreak() { document.getElementById('streak-count').innerText = streak; }
+  let calcInput = "";
+  function calcAppend(v) { calcInput += v; updateCalcDisplay(); }
+  function calcClear() { calcInput = ""; updateCalcDisplay(); }
+  function calcEval() { if(!calcInput) return; try { calcInput = String(Math.round(eval(calcInput.replace(/×/g, '*').replace(/÷/g, '/')) * 100) / 100); updateCalcDisplay(); } catch(e) { calcClear(); } }
+  function updateCalcDisplay() { document.getElementById('calc-display').value = calcInput; }
+  function calcToAnswer() { if(calcInput && !isNaN(calcInput)) document.getElementById('user-answer').value = calcInput; }
+  window.onload = function() { generateQuestion(false); };
+</script>
+</body>
+</html>
