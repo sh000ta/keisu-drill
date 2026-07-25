@@ -6,6 +6,7 @@
     <title>計数管理マスタードリル（実戦編）</title>
     <style>
         body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif; background-color: #f0f2f5; margin: 0; padding: 10px; color: #333; }
+        * { touch-action: manipulation; } /* ダブルタップ拡大や誤作動を防止 */
         .header-area { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .streak-box { background: #e74c3c; color: white; padding: 5px 12px; border-radius: 20px; font-weight: bold; font-size: 0.9em; }
         
@@ -32,10 +33,10 @@
         /* 電卓エリア */
         .calculator-container { background: #34495e; border-radius: 12px; padding: 15px; }
         .calc-display { display: flex; align-items: center; background: #fff; border-radius: 8px; margin-bottom: 10px; padding: 0 10px; }
-        .calc-display input { flex: 1; border: none; background: transparent; font-size: 1.5em; text-align: right; padding: 10px 0; outline: none; color: #2c3e50; font-family: monospace; }
+        .calc-display input { flex: 1; border: none; background: transparent; font-size: 1.5em; text-align: right; padding: 10px 0; outline: none; color: #2c3e50; font-family: monospace; width: 100%; }
         
         .calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-        .calc-btn { background: #ecf0f1; border: none; border-radius: 8px; font-size: 1.3em; padding: 15px 0; color: #2c3e50; font-weight: bold; cursor: pointer; touch-action: manipulation; }
+        .calc-btn { background: #ecf0f1; border: none; border-radius: 8px; font-size: 1.3em; padding: 15px 0; color: #2c3e50; font-weight: bold; cursor: pointer; user-select: none; -webkit-user-select: none; }
         .calc-btn:active { background: #bdc3c7; }
         .calc-btn.op { background: #95a5a6; color: white; }
         .calc-btn.op:active { background: #7f8c8d; }
@@ -66,7 +67,8 @@
 <body>
 
     <div class="header-area">
-        <div style="font-weight:bold; color:#2c3e50;">📊 計数管理 実戦ドリル</div>
+        <!-- バージョン確認用の v3 マークを追加しました -->
+        <div style="font-weight:bold; color:#2c3e50;">📊 計数管理 実戦ドリル <span style="font-size:0.6em; color:#e74c3c;">v3</span></div>
         <div class="streak-box" id="streak-display">連続正解: 0</div>
     </div>
 
@@ -94,7 +96,6 @@
                 ここに問題が表示されます。
             </div>
             
-            <!-- ヒントエリア -->
             <button class="btn-hint" id="btn-hint" onclick="showHint()">💡 ヒントを見る</button>
             <div class="hint-box" id="hint-box"></div>
             
@@ -153,247 +154,211 @@
     </div>
 
     <script>
-        // --- 状態管理 ---
-        var currentAnswer = 0;
-        var streak = 0;
-        var isTestMode = false;
-        var totalQuestions = 0;
-        var currentQuestionNum = 0;
-        var correctCount = 0;
-        var currentHintText = "";
+        // スマホで裏側でエラーが起きてもアプリを絶対に止めないための防御ブロック
+        try {
+            var currentAnswer = 0;
+            var streak = 0;
+            var isTestMode = false;
+            var totalQuestions = 0;
+            var currentQuestionNum = 0;
+            var correctCount = 0;
+            var currentHintText = "";
+            var cursorPos = 0;
+            var calcInput = document.getElementById('calc-input');
 
-        // --- ユーティリティ ---
-        function getRnd(min, max) {
-            return Math.floor(Math.random() * (max - min + 1)) + min;
-        }
-        function fmt(num) {
-            return num.toLocaleString();
-        }
-        function getTrickText() {
-            var tricks = [
-                "部下から「今月は客数が昨対105%と好調です！」と報告がありましたが、",
-                "早番スタッフの残業時間が前月より10時間減少していますが、",
-                "ちょうど競合店の特売チラシが入った週でしたが、",
-                "ちなみに昨年の同月のロス高は50,000円でしたが、",
-                "レジの釣銭エラーが今月は3回発生していましたが、",
-                "月末は雨天続きで客足が少し鈍ったものの、",
-                "店舗の売上面積は250坪、従業員数は12名ですが、"
+            // --- ユーティリティ ---
+            function getRnd(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+            function fmt(num) { return num.toLocaleString(); }
+            function getTrickText() {
+                var tricks = [
+                    "部下から「今月は客数が昨対105%と好調です！」と報告がありましたが、",
+                    "早番スタッフの残業時間が前月より10時間減少していますが、",
+                    "ちょうど競合店の特売チラシが入った週でしたが、",
+                    "ちなみに昨年の同月のロス高は50,000円でしたが、",
+                    "レジの釣銭エラーが今月は3回発生していましたが、",
+                    "月末は雨天続きで客足が少し鈍ったものの、",
+                    "店舗の売上面積は250坪、従業員数は12名ですが、"
+                ];
+                return tricks[Math.floor(Math.random() * tricks.length)];
+            }
+
+            // --- 問題生成ロジック ---
+            var questionGenerators = [
+                function() {
+                    var beg = getRnd(100, 300) * 10000;
+                    var pur = getRnd(500, 1000) * 10000;
+                    var sal = getRnd(500, 900) * 10000;
+                    var book = beg + pur - sal;
+                    var loss = getRnd(1, 10) * 10000;
+                    var act = book - loss;
+                    var text = "当月の期首在庫は" + fmt(beg) + "円、当期仕入額(売価)は" + fmt(pur) + "円、売上高は" + fmt(sal) + "円でした。\n\n" + getTrickText() + "月末に実地棚卸を行ったところ、実際の在庫(実地在庫)は" + fmt(act) + "円でした。\n\nこの時の「不明ロス高」はいくらでしょうか？（単位：円）";
+                    var exp = "【計算手順】\n①まず帳簿上の正しい在庫(あるべき在庫)を出します。\n期首在庫 ＋ 当期仕入 － 売上高\n" + fmt(beg) + " ＋ " + fmt(pur) + " － " + fmt(sal) + " ＝ " + fmt(book) + "円\n\n②帳簿在庫から実地在庫を引いてロスを出します。\n" + fmt(book) + " － " + fmt(act) + " ＝ " + fmt(loss) + "円\n\n※部下の報告や天候などの情報は計算に関係のない引っかけです。";
+                    var hint = "【ヒント】\nまずは「期首在庫 ＋ 当期仕入 － 売上高」で帳簿在庫（あるべき在庫）を出しましょう。部下の報告などの情報は計算に不要な引っかけです！";
+                    return { text: text, ans: loss, exp: exp, hint: hint };
+                },
+                function() {
+                    var beg = getRnd(200, 400) * 10000;
+                    var end = getRnd(200, 400) * 10000;
+                    var avg = (beg + end) / 2;
+                    var rate = getRnd(3, 8);
+                    var sal = avg * rate;
+                    var ans = Math.round((sal / avg) * 10) / 10;
+                    var text = "年間の売上高は" + fmt(sal) + "円でした。\n\n" + getTrickText() + "期首在庫は" + fmt(beg) + "円、期末在庫は" + fmt(end) + "円となっています。\n\nこの部門の「商品回転率」は何回転でしょうか？（小数点以下第2位を四捨五入して第1位まで解答）";
+                    var exp = "【計算手順】\n①まず平均在庫を出します。\n(期首在庫 ＋ 期末在庫) ÷ 2\n(" + fmt(beg) + " ＋ " + fmt(end) + ") ÷ 2 ＝ " + fmt(avg) + "円\n\n②売上高を平均在庫で割ります。\n売上高 ÷ 平均在庫\n" + fmt(sal) + " ÷ " + fmt(avg) + " ＝ " + ans + "回転";
+                    var hint = "【ヒント】\nいきなり割らずに、まずは「(期首在庫 ＋ 期末在庫) ÷ 2」で『平均在庫』を求めるのがポイントです。";
+                    return { text: text, ans: ans, exp: exp, hint: hint };
+                },
+                function() {
+                    var marginRatio = getRnd(15, 35);
+                    var turnRate = getRnd(20, 60) / 10;
+                    var ans = Math.round(marginRatio * turnRate);
+                    var text = "部門会議にて。\n\n" + getTrickText() + "担当部門の「荒利益率」は" + marginRatio + "％、「商品回転率」は" + turnRate + "回転でした。\n\nこの部門の「交差比率」はいくつでしょうか？（小数点以下を四捨五入して整数で解答）";
+                    var exp = "【計算手順】\n交差比率 ＝ 荒利益率(%) × 商品回転率(回転)\n" + marginRatio + " × " + turnRate + " ＝ " + ans + "\n\n※交差比率は「在庫投資に対してどれだけ粗利を稼いだか」を示す重要な指標です。";
+                    var hint = "【ヒント】\n基本公式を思い出してください。「交差比率 ＝ 荒利益率(%) × 商品回転率(回転)」です！そのまま掛け算しましょう。";
+                    return { text: text, ans: ans, exp: exp, hint: hint };
+                },
+                function() {
+                    var beg = getRnd(100, 200) * 10000;
+                    var pur = getRnd(400, 800) * 10000;
+                    var end = getRnd(100, 250) * 10000;
+                    var ans = beg + pur - end;
+                    var text = "今期の原価データを確認しています。\n\n" + getTrickText() + "期首商品棚卸高は" + fmt(beg) + "円、当期商品仕入高は" + fmt(pur) + "円、期末商品棚卸高は" + fmt(end) + "円でした。\n\nこの時の「売上原価」はいくらでしょうか？（単位：円）";
+                    var exp = "【計算手順】\n売上原価 ＝ 期首商品棚卸高 ＋ 当期商品仕入高 － 期末商品棚卸高\n" + fmt(beg) + " ＋ " + fmt(pur) + " － " + fmt(end) + " ＝ " + fmt(ans) + "円\n\n※売れた商品の元値（原価）を出すための基本公式です。";
+                    var hint = "【ヒント】\n売上原価の公式は「期首 ＋ 当期仕入 － 期末」です。余計な情報に惑わされず、この3つを拾いましょう！";
+                    return { text: text, ans: ans, exp: exp, hint: hint };
+                }
             ];
-            return tricks[Math.floor(Math.random() * tricks.length)];
-        }
 
-        // --- 問題生成ロジック (スマホエラー防止のES5形式) ---
-        var questionGenerators = [
-            function genAdvancedLoss() {
-                var beg = getRnd(100, 300) * 10000;
-                var pur = getRnd(500, 1000) * 10000;
-                var sal = getRnd(500, 900) * 10000;
-                var book = beg + pur - sal;
-                var loss = getRnd(1, 10) * 10000;
-                var act = book - loss;
-                
-                var text = "当月の期首在庫は" + fmt(beg) + "円、当期仕入額(売価)は" + fmt(pur) + "円、売上高は" + fmt(sal) + "円でした。\n\n" + getTrickText() + "月末に実地棚卸を行ったところ、実際の在庫(実地在庫)は" + fmt(act) + "円でした。\n\nこの時の「不明ロス高」はいくらでしょうか？（単位：円）";
-                var ans = loss;
-                var exp = "【計算手順】\n①まず帳簿上の正しい在庫(あるべき在庫)を出します。\n期首在庫 ＋ 当期仕入 － 売上高\n" + fmt(beg) + " ＋ " + fmt(pur) + " － " + fmt(sal) + " ＝ " + fmt(book) + "円\n\n②帳簿在庫から実地在庫を引いてロスを出します。\n" + fmt(book) + " － " + fmt(act) + " ＝ " + fmt(ans) + "円\n\n※部下の報告や天候などの情報は計算に関係のない引っかけです。";
-                var hint = "【ヒント】\nまずは「期首在庫 ＋ 当期仕入 － 売上高」で帳簿在庫（あるべき在庫）を出しましょう。部下の報告などの情報は計算に不要な引っかけです！";
-                return { text: text, ans: ans, exp: exp, hint: hint };
-            },
-            function genAdvancedTurnover() {
-                var beg = getRnd(200, 400) * 10000;
-                var end = getRnd(200, 400) * 10000;
-                var avg = (beg + end) / 2;
-                var rate = getRnd(3, 8);
-                var sal = avg * rate;
-                
-                var text = "年間の売上高は" + fmt(sal) + "円でした。\n\n" + getTrickText() + "期首在庫は" + fmt(beg) + "円、期末在庫は" + fmt(end) + "円となっています。\n\nこの部門の「商品回転率」は何回転でしょうか？（小数点以下第2位を四捨五入して第1位まで解答）";
-                var ans = Math.round((sal / avg) * 10) / 10;
-                var exp = "【計算手順】\n①まず平均在庫を出します。\n(期首在庫 ＋ 期末在庫) ÷ 2\n(" + fmt(beg) + " ＋ " + fmt(end) + ") ÷ 2 ＝ " + fmt(avg) + "円\n\n②売上高を平均在庫で割ります。\n売上高 ÷ 平均在庫\n" + fmt(sal) + " ÷ " + fmt(avg) + " ＝ " + ans + "回転";
-                var hint = "【ヒント】\nいきなり割らずに、まずは「(期首在庫 ＋ 期末在庫) ÷ 2」で『平均在庫』を求めるのがポイントです。";
-                return { text: text, ans: ans, exp: exp, hint: hint };
-            },
-            function genCrossRatio() {
-                var marginRatio = getRnd(15, 35);
-                var turnRate = getRnd(20, 60) / 10;
-                
-                var text = "部門会議にて。\n\n" + getTrickText() + "担当部門の「荒利益率」は" + marginRatio + "％、「商品回転率」は" + turnRate + "回転でした。\n\nこの部門の「交差比率」はいくつでしょうか？（小数点以下を四捨五入して整数で解答）";
-                var ans = Math.round(marginRatio * turnRate);
-                var exp = "【計算手順】\n交差比率 ＝ 荒利益率(%) × 商品回転率(回転)\n" + marginRatio + " × " + turnRate + " ＝ " + ans + "\n\n※交差比率は「在庫投資に対してどれだけ粗利を稼いだか」を示す重要な指標です。";
-                var hint = "【ヒント】\n基本公式を思い出してください。「交差比率 ＝ 荒利益率(%) × 商品回転率(回転)」です！そのまま掛け算しましょう。";
-                return { text: text, ans: ans, exp: exp, hint: hint };
-            },
-            function genCostOfSales() {
-                var beg = getRnd(100, 200) * 10000;
-                var pur = getRnd(400, 800) * 10000;
-                var end = getRnd(100, 250) * 10000;
-                
-                var text = "今期の原価データを確認しています。\n\n" + getTrickText() + "期首商品棚卸高は" + fmt(beg) + "円、当期商品仕入高は" + fmt(pur) + "円、期末商品棚卸高は" + fmt(end) + "円でした。\n\nこの時の「売上原価」はいくらでしょうか？（単位：円）";
-                var ans = beg + pur - end;
-                var exp = "【計算手順】\n売上原価 ＝ 期首商品棚卸高 ＋ 当期商品仕入高 － 期末商品棚卸高\n" + fmt(beg) + " ＋ " + fmt(pur) + " － " + fmt(end) + " ＝ " + fmt(ans) + "円\n\n※売れた商品の元値（原価）を出すための基本公式です。";
-                var hint = "【ヒント】\n売上原価の公式は「期首 ＋ 当期仕入 － 期末」です。余計な情報に惑わされず、この3つを拾いましょう！";
-                return { text: text, ans: ans, exp: exp, hint: hint };
-            }
-        ];
-
-        function startDrill() {
-            var selectEl = document.getElementById('mode-select');
-            var mode = selectEl.options[selectEl.selectedIndex].value;
-            
-            if (mode === 'infinite') {
-                isTestMode = false;
-                document.getElementById('q-counter').innerText = '通常練習';
-            } else {
-                isTestMode = true;
-                totalQuestions = parseInt(mode, 10);
-                currentQuestionNum = 1;
-                correctCount = 0;
-            }
-            
-            document.getElementById('settings-area').style.display = 'none';
-            document.getElementById('test-result-area').style.display = 'none';
-            document.getElementById('game-area').style.display = 'block';
-            
-            nextQuestion(true);
-        }
-
-        function nextQuestion(isFirst) {
-            if (isTestMode && !isFirst) {
-                currentQuestionNum++;
-                if (currentQuestionNum > totalQuestions) {
-                    finishTest();
-                    return;
+            // --- 画面遷移とゲーム進行 ---
+            window.startDrill = function() {
+                try {
+                    var mode = document.getElementById('mode-select').value;
+                    if (mode === 'infinite') {
+                        isTestMode = false;
+                        document.getElementById('q-counter').innerText = '通常練習';
+                    } else {
+                        isTestMode = true;
+                        totalQuestions = parseInt(mode, 10);
+                        currentQuestionNum = 1;
+                        correctCount = 0;
+                    }
+                    document.getElementById('settings-area').style.display = 'none';
+                    document.getElementById('test-result-area').style.display = 'none';
+                    document.getElementById('game-area').style.display = 'block';
+                    nextQuestion(true);
+                } catch (e) {
+                    alert("スタート時にエラーが起きました: " + e.message);
                 }
-            }
+            };
 
-            if (isTestMode) {
-                document.getElementById('q-counter').innerText = "第 " + currentQuestionNum + " / " + totalQuestions + " 問";
-            }
+            window.nextQuestion = function(isFirst) {
+                if (isTestMode && !isFirst) {
+                    currentQuestionNum++;
+                    if (currentQuestionNum > totalQuestions) {
+                        finishTest();
+                        return;
+                    }
+                }
+                if (isTestMode) {
+                    document.getElementById('q-counter').innerText = "第 " + currentQuestionNum + " / " + totalQuestions + " 問";
+                }
+                document.getElementById('result-area').style.display = 'none';
+                document.getElementById('calculator-area').style.display = 'block';
+                document.getElementById('hint-box').style.display = 'none';
+                document.getElementById('btn-hint').style.display = 'block';
+                calcClear();
 
-            document.getElementById('result-area').style.display = 'none';
-            document.getElementById('calculator-area').style.display = 'block';
-            document.getElementById('hint-box').style.display = 'none';
-            document.getElementById('btn-hint').style.display = 'block';
-            calcClear();
+                var q = questionGenerators[Math.floor(Math.random() * questionGenerators.length)]();
+                document.getElementById('question-text').innerText = q.text;
+                currentAnswer = q.ans;
+                document.getElementById('explanation-text').innerText = q.exp;
+                currentHintText = q.hint;
+            };
 
-            var generator = questionGenerators[Math.floor(Math.random() * questionGenerators.length)];
-            var q = generator();
-            
-            document.getElementById('question-text').innerText = q.text;
-            currentAnswer = q.ans;
-            document.getElementById('explanation-text').innerText = q.exp;
-            currentHintText = q.hint;
-        }
+            window.showHint = function() {
+                document.getElementById('hint-box').innerText = currentHintText;
+                document.getElementById('hint-box').style.display = 'block';
+                document.getElementById('btn-hint').style.display = 'none';
+            };
 
-        function showHint() {
-            document.getElementById('hint-box').innerText = currentHintText;
-            document.getElementById('hint-box').style.display = 'block';
-            document.getElementById('btn-hint').style.display = 'none';
-        }
+            window.checkAnswer = function() {
+                var inputVal = calcInput.value;
+                if (!inputVal) return;
+                
+                var userAns = 0;
+                try {
+                    var evalText = inputVal.replace(/×/g, '*').replace(/÷/g, '/').replace(/,/g, '');
+                    userAns = Function('"use strict";return (' + evalText + ')')();
+                } catch (e) {
+                    userAns = parseFloat(inputVal.replace(/,/g, ''));
+                }
 
-        function checkAnswer() {
-            var inputVal = document.getElementById('calc-input').value;
-            if (!inputVal) return;
-            
-            var userAns = 0;
-            try {
-                var evalText = inputVal.replace(/×/g, '*').replace(/÷/g, '/').replace(/,/g, '');
-                userAns = Function('"use strict";return (' + evalText + ')')();
-            } catch (e) {
-                userAns = parseFloat(inputVal.replace(/,/g, ''));
-            }
+                var resultArea = document.getElementById('result-area');
+                var judgeText = document.getElementById('judge-text');
+                var calcArea = document.getElementById('calculator-area');
 
-            var resultArea = document.getElementById('result-area');
-            var judgeText = document.getElementById('judge-text');
-            var calcArea = document.getElementById('calculator-area');
+                calcArea.style.display = 'none';
+                document.getElementById('btn-hint').style.display = 'none';
+                document.getElementById('hint-box').style.display = 'none';
+                resultArea.style.display = 'block';
 
-            calcArea.style.display = 'none';
-            document.getElementById('btn-hint').style.display = 'none';
-            document.getElementById('hint-box').style.display = 'none';
-            resultArea.style.display = 'block';
-
-            if (Math.abs(userAns - currentAnswer) <= 0.1) {
-                judgeText.innerText = "⭕️ 正解！";
-                resultArea.className = "correct";
-                if (!isTestMode) {
-                    streak++;
-                    document.getElementById('streak-display').innerText = "連続正解: " + streak;
+                if (Math.abs(userAns - currentAnswer) <= 0.1) {
+                    judgeText.innerText = "⭕️ 正解！";
+                    resultArea.className = "correct";
+                    if (!isTestMode) {
+                        streak++;
+                        document.getElementById('streak-display').innerText = "連続正解: " + streak;
+                    } else {
+                        correctCount++;
+                    }
                 } else {
-                    correctCount++;
+                    judgeText.innerText = "❌ 残念... (あなたの回答: " + userAns + " / 正解: " + currentAnswer + ")";
+                    resultArea.className = "incorrect";
+                    if (!isTestMode) {
+                        streak = 0;
+                        document.getElementById('streak-display').innerText = "連続正解: 0";
+                    }
                 }
-            } else {
-                judgeText.innerText = "❌ 残念... (あなたの回答: " + userAns + " / 正解: " + currentAnswer + ")";
-                resultArea.className = "incorrect";
-                if (!isTestMode) {
-                    streak = 0;
-                    document.getElementById('streak-display').innerText = "連続正解: 0";
+            };
+
+            window.finishTest = function() {
+                document.getElementById('game-area').style.display = 'none';
+                var resultArea = document.getElementById('test-result-area');
+                resultArea.style.display = 'block';
+                
+                var score = Math.round((correctCount / totalQuestions) * 100);
+                document.getElementById('score-num').innerText = score;
+                document.getElementById('correct-count-display').innerText = correctCount;
+                document.getElementById('total-count-display').innerText = totalQuestions;
+
+                var feedback = document.getElementById('test-feedback');
+                if (score === 100) feedback.innerText = "完璧です！計数管理マスター！";
+                else if (score >= 80) feedback.innerText = "素晴らしい成績です！実務でもバッチリですね。";
+                else if (score >= 50) feedback.innerText = "あと一歩！引っかけ情報に惑わされないように注意！";
+                else feedback.innerText = "まずは基礎の公式をしっかり復習しましょう！";
+            };
+
+            window.returnToMenu = function() {
+                document.getElementById('test-result-area').style.display = 'none';
+                document.getElementById('settings-area').style.display = 'block';
+                streak = 0;
+                document.getElementById('streak-display').innerText = "連続正解: 0";
+            };
+
+            // --- 電卓ロジック（確実に動くように徹底ガード） ---
+            function updateCursor() {
+                try {
+                    cursorPos = calcInput.selectionStart || 0;
+                } catch (e) {
+                    cursorPos = calcInput.value.length;
                 }
             }
-        }
 
-        function finishTest() {
-            document.getElementById('game-area').style.display = 'none';
-            var resultArea = document.getElementById('test-result-area');
-            resultArea.style.display = 'block';
-            
-            var score = Math.round((correctCount / totalQuestions) * 100);
-            document.getElementById('score-num').innerText = score;
-            document.getElementById('correct-count-display').innerText = correctCount;
-            document.getElementById('total-count-display').innerText = totalQuestions;
-
-            var feedback = document.getElementById('test-feedback');
-            if (score === 100) feedback.innerText = "完璧です！計数管理マスター！";
-            else if (score >= 80) feedback.innerText = "素晴らしい成績です！実務でもバッチリですね。";
-            else if (score >= 50) feedback.innerText = "あと一歩！引っかけ情報に惑わされないように注意！";
-            else feedback.innerText = "まずは基礎の公式をしっかり復習しましょう！";
-        }
-
-        function returnToMenu() {
-            document.getElementById('test-result-area').style.display = 'none';
-            document.getElementById('settings-area').style.display = 'block';
-            streak = 0;
-            document.getElementById('streak-display').innerText = "連続正解: 0";
-        }
-
-        // --- 電卓ロジック（カーソル対応 究極修正版） ---
-        var calcInput = document.getElementById('calc-input');
-        var cursorPos = 0;
-
-        // カーソル位置を常に記憶する
-        function updateCursor() {
-            cursorPos = calcInput.selectionStart || 0;
-        }
-        calcInput.addEventListener('blur', updateCursor);
-        calcInput.addEventListener('keyup', updateCursor);
-        calcInput.addEventListener('click', updateCursor);
-        calcInput.addEventListener('input', updateCursor);
-
-        function calcAppend(val) {
-            var text = calcInput.value;
-            var start = cursorPos;
-            
-            calcInput.value = text.substring(0, start) + val + text.substring(start);
-            cursorPos = start + val.length;
-            
-            calcInput.focus();
-            try { calcInput.setSelectionRange(cursorPos, cursorPos); } catch(e) {}
-        }
-
-        function calcBackspace() {
-            var text = calcInput.value;
-            var start = cursorPos;
-
-            if (start > 0) {
-                calcInput.value = text.substring(0, start - 1) + text.substring(start);
-                cursorPos = start - 1;
+            if (calcInput) {
+                calcInput.addEventListener('blur', updateCursor);
+                calcInput.addEventListener('keyup', updateCursor);
+                calcInput.addEventListener('click', updateCursor);
+                calcInput.addEventListener('input', updateCursor);
             }
-            
-            calcInput.focus();
-            try { calcInput.setSelectionRange(cursorPos, cursorPos); } catch(e) {}
-        }
 
-        function calcClear() {
-            calcInput.value = "";
-            cursorPos = 0;
-            calcInput.focus();
-        }
-
-        func
+        
